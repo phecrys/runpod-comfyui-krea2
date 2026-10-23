@@ -1,0 +1,79 @@
+# GitHub 에 push 하면 Docker 이미지를 빌드해 GitHub Container Registry(ghcr.io)에 올립니다.
+# 로컬에 Docker 를 설치할 필요가 없습니다.
+#   결과 이미지: ghcr.io/<깃허브아이디>/<저장소이름>:latest
+# (선택) Docker Hub 에도 올리려면 저장소 Settings → Secrets 에
+#   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN 을 추가하세요.
+name: build-image
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+    inputs:
+      comfyui_ref:
+        description: "ComfyUI 브랜치/태그/커밋 (기본 master)"
+        required: false
+        default: "master"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+    steps:
+      - name: 러너 디스크 확보 (CUDA + PyTorch 이미지가 커서 필요)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - uses: actions/checkout@v4
+
+      - name: 이미지 이름 (소문자)
+        id: img
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: GHCR 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Hub 로그인 (선택)
+        if: ${{ env.DH_USER != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 태그 목록
+        id: tags
+        run: |
+          TAGS="${{ steps.img.outputs.name }}:latest,${{ steps.img.outputs.name }}:${GITHUB_SHA::7}"
+          if [ -n "$DH_USER" ]; then
+            REPO="${GITHUB_REPOSITORY#*/}"; REPO="${REPO,,}"
+            TAGS="$TAGS,${DH_USER,,}/$REPO:latest"
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      - name: 빌드 & 푸시
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            COMFYUI_REF=${{ github.event.inputs.comfyui_ref || 'master' }}
