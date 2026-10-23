@@ -1,0 +1,61 @@
+# =====================================================================
+#  models.yaml — 파드 시작 시 자동으로 설치할 항목
+#  위치: /workspace/models.yaml  (처음 시작할 때 이 기본 파일이 복사됨)
+#  수정 후 파드를 재시작하거나, 터미널에서:  python /opt/krea2/provision.py --only models
+#  이미 받은 파일은 건너뛰므로 여러 번 실행해도 안전합니다.
+#
+#  항목 형식
+#    - civitai: 1234567          # Civitai 모델 "버전" ID (페이지 URL의 ?modelVersionId= 값)
+#      dir: loras                # (선택) 저장 폴더. 생략하면 Civitai 타입으로 자동 결정
+#      name: 내파일.safetensors   # (선택) 저장 파일명
+#      file: fp8                 # (선택) 한 버전에 파일이 여러 개일 때 이름 필터
+#      enabled: false            # (선택) 잠시 끄기
+#    - url: https://...          # Hugging Face(blob/resolve 링크 모두 OK) 또는 직접 URL
+#      dir: vae                  # url 항목은 dir 필수
+#
+#  자동 폴더 규칙 (Civitai)
+#    LORA/LoCon/DoRA → loras,  VAE → vae,  TextualInversion → embeddings
+#    Checkpoint → 파일을 열어 구조를 확인:
+#       DiT 가중치만 있으면 diffusion_models  (Krea2 파인튜닝 대부분 → "Load Diffusion Model" 노드)
+#       VAE/텍스트인코더까지 포함된 통짜면 checkpoints
+# =====================================================================
+
+# ComfyUI 시작 전에 설치할 커스텀 노드 (git 주소)
+custom_nodes:
+  # - https://github.com/rgthree/rgthree-comfy
+  # - https://github.com/kijai/ComfyUI-KJNodes
+
+# 추가로 받아 둘 워크플로 JSON URL (이미지에 포함된 Krea2 LoRA 워크플로는 자동 설치됨)
+workflows:
+  # - https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main/templates/image_krea2_turbo_t2i.json
+
+# ※ add-model 명령이 이 목록 맨 아래에 항목을 덧붙이므로 models: 는 항상 파일 마지막에 두세요.
+models:
+  # ---------------- Krea 2 기본 구성 (공식 Comfy-Org 배포본) ----------------
+  # 1) 확산 모델 — Turbo(8스텝) FP8. Civitai 의 Krea2 파인튜닝 체크포인트만 쓸 거면 enabled: false 로 꺼도 됨
+  - url: https://huggingface.co/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors
+    dir: diffusion_models
+
+  # 2) 텍스트 인코더 (Qwen3-VL 4B) — 모든 Krea2 모델 공용, 필수
+  - url: https://huggingface.co/Comfy-Org/Krea-2/resolve/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors
+    dir: text_encoders
+
+  # 3) VAE (Qwen Image VAE) — 필수
+  - url: https://huggingface.co/Comfy-Org/Krea-2/resolve/main/vae/qwen_image_vae.safetensors
+    dir: vae
+
+  # ---------------- 공식 스타일 LoRA (원하는 것만 enabled 해제) ----------------
+  - url: https://huggingface.co/Comfy-Org/Krea-2/resolve/main/loras/krea2_retroanime.safetensors
+    dir: loras
+    enabled: false
+  - url: https://huggingface.co/Comfy-Org/Krea-2/resolve/main/loras/krea2_softwatercolor.safetensors
+    dir: loras
+    enabled: false
+
+  # ---------------- Civitai: 여기에 원하는 Krea2 체크포인트 / LoRA 추가 ----------------
+  # 예시 (숫자를 실제 버전 ID 로 바꾸고 주석 해제)
+  # - civitai: 1111111                      # Krea2 파인튜닝 체크포인트 → 자동으로 diffusion_models
+  # - civitai: "https://civitai.com/models/222222?modelVersionId=3333333"   # LoRA → 자동으로 loras
+  # - civitai: 4444444
+  #   dir: loras/krea2                      # 하위 폴더로 정리하고 싶을 때
+  #   name: my_style_v2.safetensors
