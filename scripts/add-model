@@ -1,0 +1,63 @@
+#!/opt/venv/bin/python
+"""
+실행 중인 파드에서 모델을 즉시 추가합니다 (ComfyUI 재시작 불필요).
+
+  add-model 1234567                                  # Civitai 버전 ID
+  add-model "https://civitai.com/models/111?modelVersionId=222"
+  add-model https://civitai.com/models/111 --file fp8 # 최신 버전 중 이름에 fp8 포함 파일
+  add-model https://huggingface.co/org/repo/resolve/main/x.safetensors --dir loras
+  add-model 1234567 --dir loras/krea2 --name my_style.safetensors
+  add-model 1234567 --no-save                        # models.yaml 에 기록하지 않음
+
+받은 뒤 ComfyUI 화면에서 'R' 키를 누르면 목록에 나타납니다.
+기본적으로 /workspace/models.yaml 에도 추가되어 다음 파드에서도 자동으로 받습니다.
+"""
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import provision as P  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Civitai / Hugging Face 모델 즉시 추가")
+    ap.add_argument("source", help="Civitai 버전ID/URL 또는 다운로드 URL")
+    ap.add_argument("--dir", help="models/ 하위 폴더 (예: loras, diffusion_models, vae)")
+    ap.add_argument("--name", help="저장 파일명")
+    ap.add_argument("--file", help="Civitai 버전 내 여러 파일 중 이름에 이 문자열이 포함된 파일 선택")
+    ap.add_argument("--no-save", action="store_true", help="models.yaml 에 기록하지 않음")
+    a = ap.parse_args()
+
+    s = a.source.strip()
+    entry = {"civitai": s} if (s.isdigit() or "civitai.com" in s or s.lower().startswith("civitai:")) else {"url": s}
+    if s.lower().startswith("civitai:"):
+        entry["civitai"] = s.split(":", 1)[1]
+    for k in ("dir", "name", "file"):
+        if getattr(a, k):
+            entry[k] = getattr(a, k)
+
+    try:
+        dest = P.download(P.resolve(entry))
+    except Exception as exc:  # noqa: BLE001
+        P.log(f"실패: {exc}")
+        return 1
+
+    if not a.no_save:
+        cfg = P.WS / "models.yaml"
+        lines = ["", f"  # add-model 로 추가됨 → {dest.relative_to(P.MODELS_DIR)}"]
+        key = "civitai" if "civitai" in entry else "url"
+        val = entry[key]
+        lines.append(f"  - {key}: \"{val}\"")
+        for k in ("dir", "name", "file"):
+            if k in entry:
+                lines.append(f"    {k}: \"{entry[k]}\"")
+        with open(cfg, "a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        P.log(f"{cfg} 에 기록했습니다")
+    P.log("ComfyUI 화면에서 'R' 키를 눌러 모델 목록을 새로고침하세요.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
